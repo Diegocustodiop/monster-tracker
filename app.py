@@ -1,77 +1,63 @@
 import streamlit as st
 import requests
-from bs4 import BeautifulSoup
-import pandas as pd
 
-st.set_page_config(page_title="Monster Tracker Pro", page_icon="🔋")
+st.set_page_config(page_title="Monster Tracker - Supermercados", page_icon="🛒")
+
+# Recomendo usar a SerpApi para evitar bloqueios (Pegue sua chave em serpapi.com)
+API_KEY = "SUA_CHAVE_AQUI"
 
 st.markdown("""
     <style>
     .stApp {background-color: #000; color: #30ff00;}
-    .stButton>button {background-color: #30ff00; color: black; font-weight: bold; width: 100%; border-radius: 10px;}
-    .offer-card {background-color: #111; padding: 15px; border-radius: 10px; border: 1px solid #30ff00; margin-bottom: 10px;}
-    .store-tag {font-size: 12px; color: #888; text-transform: uppercase;}
+    .market-card {
+        background-color: #111; 
+        padding: 15px; 
+        border-radius: 12px; 
+        border-left: 5px solid #30ff00; 
+        margin-bottom: 15px;
+    }
+    .price-text { font-size: 24px; font-weight: bold; color: #30ff00; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🔋 Monster Tracker Multi-Market")
-st.write("Buscando o melhor preço em tempo real...")
+st.title("🛒 Monster no Supermercado")
+st.write("Buscando ofertas em redes de varejo e mercados.")
 
-def buscar_ofertas(loja):
-    resultados = []
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "pt-BR,pt;q=0.9"
-    }
-    
-    try:
-        if loja == "Mercado Livre":
-            url = "https://lista.mercadolivre.com.br/monster-energy-pack"
-            response = requests.get(url, headers=headers, timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            itens = soup.select(".ui-search-result__content-wrapper", limit=5)
-            for item in itens:
-                nome = item.find('h2').text
-                preco = item.find('span', class_='andes-money-amount__fraction').text
-                link = item.find('a')['href']
-                resultados.append({"loja": "Mercado Livre", "nome": nome, "preco": float(preco.replace('.','')), "link": link})
-        
-        elif loja == "Amazon":
-            url = "https://www.amazon.com.br/s?k=monster+energy+pack"
-            response = requests.get(url, headers=headers, timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            itens = soup.select(".s-result-item[data-component-type='s-search-result']", limit=5)
-            for item in itens:
-                try:
-                    nome = item.h2.text.strip()
-                    preco_int = item.select_one(".a-price-whole").text.replace('.','').replace(',','')
-                    link = "https://www.amazon.com.br" + item.select_one("h2 a")['href']
-                    resultados.append({"loja": "Amazon", "nome": nome, "preco": float(preco_int), "link": link})
-                except: continue
-    except:
-        pass
-    return resultados
-
-if st.button('🔥 COMPARAR TODOS OS MARKETPLACES'):
-    with st.spinner('Rastreando Amazon e Mercado Livre...'):
-        todas_ofertas = []
-        todas_ofertas.extend(buscar_ofertas("Amazon"))
-        todas_ofertas.extend(buscar_ofertas("Mercado Livre"))
-        
-        if todas_ofertas:
-            # Ordena pelo mais barato
-            df = pd.DataFrame(todas_ofertas).sort_values(by="preco")
+if st.button('🔎 BUSCAR EM SUPERMERCADOS'):
+    if API_KEY == "SUA_CHAVE_AQUI":
+        st.warning("Insira sua chave API no código para buscar.")
+    else:
+        with st.spinner('Consultando redes de supermercados...'):
+            # A busca agora foca em 'supermercado' e 'delivery'
+            query = "monster energy pack supermercado"
+            url = f"https://serpapi.com/search.json?engine=google_shopping&q={query}&google_domain=google.com.br&gl=br&hl=pt&api_key={API_KEY}"
             
-            for index, row in df.iterrows():
-                st.markdown(f"""
-                <div class="offer-card">
-                    <span class="store-tag">{row['loja']}</span>
-                    <h2 style="margin: 5px 0;">R$ {row['preco']:.2f}</h2>
-                    <p style="color: white; font-size: 14px;">{row['nome']}</p>
-                </div>
-                """, unsafe_allow_html=True)
-                st.link_button(f"IR PARA {row['loja'].upper()}", row['link'])
-        else:
-            st.error("Os sites estão bloqueando o acesso agora. Tente clicar novamente ou aguarde 30 segundos.")
+            try:
+                response = requests.get(url)
+                dados = response.json()
+                
+                if "shopping_results" in dados:
+                    # Filtramos para evitar Amazon/Mercado Livre e focar em mercados
+                    excluir = ["amazon", "mercado livre", "shopee"]
+                    resultados = [item for item in dados["shopping_results"] 
+                                 if not any(x in item.get('source', '').lower() for x in excluir)]
+                    
+                    if resultados:
+                        for item in resultados[:10]:
+                            with st.container():
+                                st.markdown(f"""
+                                <div class="market-card">
+                                    <p style="color:#888; margin:0;">{item.get('source')}</p>
+                                    <h2 class="price-text">{item.get('price')}</h2>
+                                    <p style="color:white; font-size:14px;">{item.get('title')}</p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                st.link_button(f"IR PARA {item.get('source').upper()}", item.get('link'))
+                    else:
+                        st.info("Nenhuma oferta de supermercado encontrada agora. Tente em alguns minutos.")
+                else:
+                    st.error("Erro ao processar dados da busca.")
+            except Exception as e:
+                st.error(f"Erro de conexão: {e}")
 
-st.info("Dica: Se não carregar de primeira, clique novamente. Esses sites bloqueiam acessos repetidos muito rápidos.")
+st.caption("Foco: Carrefour, Pão de Açúcar, Extra, Mambo, Sonda, etc.")
