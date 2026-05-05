@@ -1,76 +1,77 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
+import pandas as pd
 
-st.set_page_config(page_title="Monster Tracker | Amazon", page_icon="🔋")
+st.set_page_config(page_title="Monster Tracker Pro", page_icon="🔋")
 
-# Estilo visual
 st.markdown("""
     <style>
     .stApp {background-color: #000; color: #30ff00;}
-    .stButton>button {background-color: #30ff00; color: black; font-weight: bold; border-radius: 20px;}
-    .card {background-color: #111; padding: 20px; border-radius: 15px; border: 1px solid #333; margin-bottom: 10px;}
+    .stButton>button {background-color: #30ff00; color: black; font-weight: bold; width: 100%; border-radius: 10px;}
+    .offer-card {background-color: #111; padding: 15px; border-radius: 10px; border: 1px solid #30ff00; margin-bottom: 10px;}
+    .store-tag {font-size: 12px; color: #888; text-transform: uppercase;}
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🔋 Monster Tracker (Amazon)")
-st.write("Buscando ofertas de Monster direto na Amazon Brasil")
+st.title("🔋 Monster Tracker Multi-Market")
+st.write("Buscando o melhor preço em tempo real...")
 
-def buscar_amazon():
-    produtos = []
-    # URL de busca da Amazon para Monster Energy
-    url = "https://www.amazon.com.br/s?k=monster+energy+pack"
-    
-    # Headers para parecer um navegador real
+def buscar_ofertas(loja):
+    resultados = []
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-        "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "pt-BR,pt;q=0.9"
     }
     
     try:
-        response = requests.get(url, headers=headers, timeout=15)
-        soup = BeautifulSoup(response.text, 'html.parser')
+        if loja == "Mercado Livre":
+            url = "https://lista.mercadolivre.com.br/monster-energy-pack"
+            response = requests.get(url, headers=headers, timeout=10)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            itens = soup.select(".ui-search-result__content-wrapper", limit=5)
+            for item in itens:
+                nome = item.find('h2').text
+                preco = item.find('span', class_='andes-money-amount__fraction').text
+                link = item.find('a')['href']
+                resultados.append({"loja": "Mercado Livre", "nome": nome, "preco": float(preco.replace('.','')), "link": link})
         
-        # Seleciona os blocos de produtos da Amazon
-        itens = soup.select(".s-result-item[data-component-type='s-search-result']", limit=8)
-        
-        for item in itens:
-            nome = item.h2.text.strip()
-            # Busca o preço (parte inteira e decimal)
-            preco_inteiro = item.select_one(".a-price-whole")
-            preco_decimal = item.select_one(".a-price-fraction")
-            link_tag = item.select_one("h2 a")
-            
-            if preco_inteiro and link_tag:
-                preco_final = preco_inteiro.text.replace(",", "").replace(".", "")
-                centavos = preco_decimal.text if preco_decimal else "00"
-                link = "https://www.amazon.com.br" + link_tag['href']
-                
-                produtos.append({
-                    "nome": nome,
-                    "preco": f"{preco_final},{centavos}",
-                    "link": link
-                })
-    except Exception as e:
-        st.error(f"Erro ao conectar com a Amazon: {e}")
-        
-    return produtos
+        elif loja == "Amazon":
+            url = "https://www.amazon.com.br/s?k=monster+energy+pack"
+            response = requests.get(url, headers=headers, timeout=10)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            itens = soup.select(".s-result-item[data-component-type='s-search-result']", limit=5)
+            for item in itens:
+                try:
+                    nome = item.h2.text.strip()
+                    preco_int = item.select_one(".a-price-whole").text.replace('.','').replace(',','')
+                    link = "https://www.amazon.com.br" + item.select_one("h2 a")['href']
+                    resultados.append({"loja": "Amazon", "nome": nome, "preco": float(preco_int), "link": link})
+                except: continue
+    except:
+        pass
+    return resultados
 
-if st.button('🔍 PESQUISAR NA AMAZON'):
-    with st.spinner('Consultando prateleiras da Amazon...'):
-        resultados = buscar_amazon()
+if st.button('🔥 COMPARAR TODOS OS MARKETPLACES'):
+    with st.spinner('Rastreando Amazon e Mercado Livre...'):
+        todas_ofertas = []
+        todas_ofertas.extend(buscar_ofertas("Amazon"))
+        todas_ofertas.extend(buscar_ofertas("Mercado Livre"))
         
-        if resultados:
-            for i, prod in enumerate(resultados):
+        if todas_ofertas:
+            # Ordena pelo mais barato
+            df = pd.DataFrame(todas_ofertas).sort_values(by="preco")
+            
+            for index, row in df.iterrows():
                 st.markdown(f"""
-                <div class="card">
-                    <h2 style='color:#30ff00;'>R$ {prod['preco']}</h2>
-                    <p style='color:white; font-size:14px;'>{prod['nome']}</p>
+                <div class="offer-card">
+                    <span class="store-tag">{row['loja']}</span>
+                    <h2 style="margin: 5px 0;">R$ {row['preco']:.2f}</h2>
+                    <p style="color: white; font-size: 14px;">{row['nome']}</p>
                 </div>
                 """, unsafe_allow_html=True)
-                st.link_button(f"VER NA AMAZON", prod['link'])
-                st.write("")
+                st.link_button(f"IR PARA {row['loja'].upper()}", row['link'])
         else:
-            st.warning("A Amazon bloqueou a consulta automática ou não encontrou itens. Tente clicar novamente.")
+            st.error("Os sites estão bloqueando o acesso agora. Tente clicar novamente ou aguarde 30 segundos.")
 
-st.caption("Nota: Os preços podem variar de acordo com o frete e promoções relâmpago.")
+st.info("Dica: Se não carregar de primeira, clique novamente. Esses sites bloqueiam acessos repetidos muito rápidos.")
